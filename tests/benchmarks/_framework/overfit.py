@@ -48,6 +48,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from tests.benchmarks._framework.adapter_base import OverfitDimensions
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants — mirror the pre-registration. Changing these requires updating
 # the matching pre-reg file in the same PR (single source of truth).
@@ -194,14 +196,21 @@ def per_system_uniformity(
     variant: list[dict[str, Any]],
     mode: str,
     threshold: float = PER_SYSTEM_UNIFORMITY_MAX,
+    dimensions: OverfitDimensions | None = None,
 ) -> GuardVerdict:
     """A real mechanism lifts both ``boutique`` and ``trainticket`` similarly.
 
     Spread (max − min) above ``threshold`` indicates the variant learned a
     system-specific pattern instead of a general mechanism.
+
+    ``dimensions`` selects the ``case.metadata`` key used to read each
+    case's "system" attribute. Default falls back to CloudOpsBench's
+    schema; other adapters pass their own ``OverfitDimensions`` so the
+    guard knows which key holds the corpus's system label.
     """
+    dims = dimensions or OverfitDimensions()
     per_system = _per_attribute_lift(
-        baseline, variant, mode, lambda c: c["case"]["metadata"]["system"]
+        baseline, variant, mode, lambda c: c["case"]["metadata"][dims.system_key]
     )
     if not per_system:
         return GuardVerdict(
@@ -234,6 +243,7 @@ def per_stratum_uniformity(
     variant: list[dict[str, Any]],
     mode: str,
     threshold: float = PER_STRATUM_CONCENTRATION_MAX,
+    dimensions: OverfitDimensions | None = None,
 ) -> GuardVerdict:
     """No single fault category should dominate the lift.
 
@@ -251,8 +261,9 @@ def per_stratum_uniformity(
         must be ≤ threshold. The ratio measures how disproportionate the
         biggest lift is vs the typical lift.
     """
+    dims = dimensions or OverfitDimensions()
     per_stratum = _per_attribute_lift(
-        baseline, variant, mode, lambda c: c["case"]["metadata"]["fault_category"]
+        baseline, variant, mode, lambda c: c["case"]["metadata"][dims.stratum_key]
     )
     pos_lifts = [lift for lift, _ in per_stratum.values() if lift > 0]
     per_stratum_detail = {s: {"lift": lift, "n": n} for s, (lift, n) in per_stratum.items()}
@@ -311,6 +322,7 @@ def flipped_loss_to_win_clusters(
     variant: list[dict[str, Any]],
     mode: str,
     threshold: float = CLUSTER_CONCENTRATION_MAX,
+    dimensions: OverfitDimensions | None = None,
 ) -> GuardVerdict:
     """Cluster scenarios the variant rescued (baseline all-fail → variant
     majority-win) by ``(system, fault_category, GT-service-prefix)``.
@@ -330,6 +342,7 @@ def flipped_loss_to_win_clusters(
     the mean across replicates is both correct and resilient to that
     schema gap.
     """
+    dims = dimensions or OverfitDimensions()
     base_by_case = _mean_a1_by_case(baseline, mode)
     var_by_case = _mean_a1_by_case(variant, mode)
     case_meta = {c["case"]["case_id"]: c["case"]["metadata"] for c in baseline + variant}
@@ -338,12 +351,12 @@ def flipped_loss_to_win_clusters(
         # All baseline replicates lost AND majority of variant replicates won.
         if base_by_case[case_id] == 0.0 and var_by_case[case_id] >= 0.5:
             meta = case_meta[case_id]
-            gt_fo = meta["ground_truth"].get("fault_object", "")
+            gt_fo = meta["ground_truth"].get(dims.gt_object_key, "")
             # Prefix-strip the last "-<word>" segment so service families
             # (ts-payment-*, ts-order-*) cluster together rather than each
             # specific service forming its own singleton.
             gt_prefix = gt_fo.rsplit("-", 1)[0] if "-" in gt_fo else gt_fo
-            clusters[(meta["system"], meta["fault_category"], gt_prefix)] += 1
+            clusters[(meta[dims.system_key], meta[dims.stratum_key], gt_prefix)] += 1
     total_flips = sum(clusters.values())
     if total_flips == 0:
         return GuardVerdict(
@@ -355,6 +368,12 @@ def flipped_loss_to_win_clusters(
         )
     max_concentration = max(c / total_flips for c in clusters.values())
     top = sorted(clusters.items(), key=lambda kv: -kv[1])[:10]
+    # Output dict labels use the adapter's declared dimension key names
+    # so the report's vocabulary matches the source data. A
+    # ``cluster``-shaped adapter sees ``"cluster": "east"`` instead of
+    # ``"system": "east"``. Prior to Phase 3 this was hardcoded as
+    # ``"system"`` / ``"fault_category"`` which silently misrepresented
+    # any non-CloudOpsBench adapter's report.
     return GuardVerdict(
         name="cluster_concentration",
         passed=max_concentration <= threshold,
@@ -363,7 +382,12 @@ def flipped_loss_to_win_clusters(
         detail={
             "total_flips": total_flips,
             "top_clusters": [
-                {"system": s, "fault_category": fc, "gt_prefix": gp, "flips": n}
+                {
+                    dims.system_key: s,
+                    dims.stratum_key: fc,
+                    "gt_prefix": gp,
+                    "flips": n,
+                }
                 for (s, fc, gp), n in top
             ],
         },
@@ -534,6 +558,7 @@ def analyze(
     variant: list[dict[str, Any]],
     mode: str = "opensre+llm",
     a_a_variant: list[dict[str, Any]] | None = None,
+    dimensions: OverfitDimensions | None = None,
 ) -> OverfitReport:
     """Run every guard and aggregate verdicts into a single ``OverfitReport``.
 
@@ -547,12 +572,19 @@ def analyze(
     verdict that fails — the report cannot ship without the A/A pair, by
     design. The pre-registered decision matrix locks A/A as required, and
     this aggregator enforces it at the runtime layer.
+
+    ``dimensions`` is forwarded to Guards A, B, and C so the framework
+    does not hardcode which ``case.metadata`` keys hold the system /
+    stratum / GT-object attributes. ``None`` falls back to
+    CloudOpsBench's schema (back-compat); other adapters pass their own
+    ``OverfitDimensions`` (typically obtained from
+    ``adapter.overfit_dimensions()``).
     """
     full_lift, full_n = aggregate_lift(baseline, variant, mode)
     guards = [
-        per_system_uniformity(baseline, variant, mode),
-        per_stratum_uniformity(baseline, variant, mode),
-        flipped_loss_to_win_clusters(baseline, variant, mode),
+        per_system_uniformity(baseline, variant, mode, dimensions=dimensions),
+        per_stratum_uniformity(baseline, variant, mode, dimensions=dimensions),
+        flipped_loss_to_win_clusters(baseline, variant, mode, dimensions=dimensions),
         held_out_generalization_gate(baseline, variant, mode),
     ]
     if a_a_variant is None:
@@ -598,11 +630,17 @@ def _format_report(report: OverfitReport) -> str:
 def main() -> int:
     """CLI entry: ``python -m tests.benchmarks._framework.overfit
     --baseline-dir <path> --variant-dir <path> [--a-a-variant-dir <path>]
-    [--mode opensre+llm] [--json]``.
+    [--adapter <name>] [--mode opensre+llm] [--json]``.
 
     Without ``--a-a-variant-dir`` the report's A/A guard is "not evaluated"
     and ``ship`` is False — provide the second variant run (different
     seed, same config) to satisfy the pre-registered A/A consistency gate.
+
+    Without ``--adapter`` the guards use the default ``OverfitDimensions``
+    (CloudOpsBench-shape metadata keys). Pass ``--adapter <name>`` to
+    look up the registered adapter's declared dimensions via the
+    framework registry — required when running the CLI against case
+    files emitted by a non-CloudOpsBench adapter.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-dir", type=Path, required=True)
@@ -618,6 +656,17 @@ def main() -> int:
             "'not evaluated' and the report ship verdict is False."
         ),
     )
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        help=(
+            "Optional adapter name. When provided, the framework registry "
+            "resolves the adapter's declared OverfitDimensions and the "
+            "guards consult those metadata keys instead of the default "
+            "CloudOpsBench-shape keys. Required when running against case "
+            "files emitted by a non-CloudOpsBench adapter."
+        ),
+    )
     parser.add_argument("--mode", default="opensre+llm")
     parser.add_argument(
         "--json", action="store_true", help="Emit a JSON report instead of human-readable text."
@@ -627,7 +676,20 @@ def main() -> int:
     baseline = load_cells(args.baseline_dir)
     variant = load_cells(args.variant_dir)
     a_a_variant = load_cells(args.a_a_variant_dir) if args.a_a_variant_dir is not None else None
-    report = analyze(baseline, variant, mode=args.mode, a_a_variant=a_a_variant)
+    dimensions: OverfitDimensions | None = None
+    if args.adapter is not None:
+        # Late import — keeps the overfit module's import surface small
+        # for callers that only use the guard functions directly.
+        from tests.benchmarks._framework.registry import build_adapter
+
+        dimensions = build_adapter(args.adapter).overfit_dimensions()
+    report = analyze(
+        baseline,
+        variant,
+        mode=args.mode,
+        a_a_variant=a_a_variant,
+        dimensions=dimensions,
+    )
 
     if args.json:
         print(

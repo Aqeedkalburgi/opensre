@@ -2,8 +2,8 @@
 #
 # Experiment ID: ``exp_db_evidence_pipeline_v1`` (full-N phase)
 #
-# Pre-registration: configs/preregistrations/exp_db_evidence_pipeline_v1.yml
-# (committed BEFORE this run; framework integrity gate enforces the link).
+# Pre-registration: ./preregistration.yml (co-located in this
+# experiment folder; framework integrity gate enforces the link).
 #
 # What's being tested
 # ===================
@@ -28,7 +28,7 @@
 #   2. gh workflow run "Benchmark image — build + push to ECR" --ref <branch>
 #   3. gh workflow run "Benchmark image — promote" --ref <branch> -f image_tag=<sha>
 #   4. gh workflow run "Benchmark — run on Fargate" --ref <branch> \
-#        -f config="tests/benchmarks/cloudopsbench/configs/cloudopsbench_db_evidence_pipeline_full_openai.yml" \
+#        -f config="tests/benchmarks/cloudopsbench/configs/experiments/exp_db_evidence_pipeline/full_n.yml" \
 #        -f dev_mode=false
 #
 # dev_mode=false is REQUIRED for this run. This is the promotable cycle:
@@ -75,7 +75,7 @@ output_dir: .bench-results/cloudopsbench_db_evidence_pipeline_full_openai/
 
 # Pre-reg pinned. Integrity gate validates content + opensre_sha at
 # pre-flight; rejects the run if anything has drifted since commit.
-pre_registration_path: tests/benchmarks/cloudopsbench/configs/preregistrations/exp_db_evidence_pipeline_v1.yml
+pre_registration_path: tests/benchmarks/cloudopsbench/configs/experiments/exp_db_evidence_pipeline/preregistration.yml
 
 filters:
   # Full corpus — no limit, no system filter, no fault_category filter.
