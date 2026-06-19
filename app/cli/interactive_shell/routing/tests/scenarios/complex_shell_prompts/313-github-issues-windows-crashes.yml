@@ -1,21 +1,14 @@
 id: 313-github-issues-windows-crashes
 title: Assistant checks GitHub issues for Windows crashes
 intent_class: complex_shell_prompts
-risk_level: low
 input:
   prompt: can you check the github issues for the windows crashes?
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations: []
   # Force an empty resolved store in every environment so the gather loop has no
   # tools available regardless of the developer's local ~/.opensre integrations.
   resolved_integrations: {}
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes:
 - "Covers the no-integration handoff path (Option A negative control): with no\
   \ integrations connected, the planner must NOT dispatch a sourceless RCA, so it\
@@ -49,5 +42,4 @@ history:
   expected:
   - type: cli_agent
     ok: true
-tier: full
 runs: 1

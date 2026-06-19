@@ -21,6 +21,7 @@ from app.cli.interactive_shell.routing.tests._oracle_normalize import (
 )
 from app.cli.interactive_shell.routing.tests.scenario_loader import (
     GatheredToolsContract,
+    ScenarioCapabilities,
     ScenarioCase,
 )
 from app.cli.interactive_shell.runtime.execution import execute_routed_turn
@@ -31,6 +32,26 @@ from app.cli.interactive_shell.runtime.session import ReplSession
 class OracleRunResult:
     passed: bool
     details: dict[str, Any]
+
+
+def session_capabilities(capabilities: ScenarioCapabilities) -> dict[str, tuple[str, ...]]:
+    """Project a scenario's three-state capabilities onto a session dict.
+
+    Keys whose value is ``None`` (the capability is absent from the fixture) are
+    omitted entirely so the tool stays available, mirroring the production
+    default where ``ReplSession()`` carries no capability constraints. An
+    explicit ``()`` (disabled) or a non-empty allowlist is passed through
+    verbatim so the runtime capability gate sees the intended constraint.
+    """
+    projected: dict[str, tuple[str, ...]] = {}
+    for key, value in (
+        ("slash_commands", capabilities.slash_commands),
+        ("cli_commands", capabilities.cli_commands),
+        ("synthetic_suites", capabilities.synthetic_suites),
+    ):
+        if value is not None:
+            projected[key] = value
+    return projected
 
 
 def fresh_session(
@@ -106,14 +127,39 @@ def history_matches(actual: list[dict[str, Any]], expected: list[dict[str, Any]]
     return True
 
 
+def tool_output_returned_valid_data(output: Any) -> bool:
+    """Whether a gathered tool's output is a successful integration response.
+
+    The tool loop turns any tool exception (e.g. a Sentry 401 / 400) into
+    ``{"error": ...}`` and read-only tools self-report ``available: false`` when
+    they are not configured. A call returned valid data only when neither of
+    those failure markers is present, i.e. the tool reached the live integration
+    and got a real payload back. An empty-but-successful result (e.g. a 200 with
+    zero matching issues) still counts: it is a valid integration response, not
+    an auth/transport failure.
+    """
+    if isinstance(output, dict):
+        if "error" in output:
+            return False
+        return output.get("available") is not False
+    if isinstance(output, list):
+        return True
+    return output is not None
+
+
 def _gathered_contract_failures(
     contract: GatheredToolsContract | None,
     gathered_tool_calls: list[str],
+    gathered_valid_data: set[str],
 ) -> list[str]:
     """Return the names of any violated gathered-tools contract dimensions.
 
-    A tool counts as "called" when it fired during the gather loop, regardless
-    of whether the call succeeded or returned an error.
+    For ``must_call_*`` / ``must_not_call`` a tool counts as "called" when it
+    fired during the gather loop, regardless of whether it succeeded.
+    ``must_return_valid_data`` is checked against ``gathered_valid_data`` — the
+    set of tools that fired AND returned a successful integration response —
+    so a credential/transport error fails the contract instead of passing as a
+    bare "was called".
     """
     if contract is None:
         return []
@@ -125,6 +171,8 @@ def _gathered_contract_failures(
         failures.append("must_call_all")
     if any(name in called for name in contract.must_not_call):
         failures.append("must_not_call")
+    if any(name not in gathered_valid_data for name in contract.must_return_valid_data):
+        failures.append("must_return_valid_data")
     return failures
 
 
@@ -206,11 +254,7 @@ def run_oracle_once(case: ScenarioCase, monkeypatch: pytest.MonkeyPatch) -> Orac
     session = fresh_session(
         with_prior_state=case.scenario.session.has_prior_state,
         configured_integrations=case.scenario.session.configured_integrations,
-        available_capabilities={
-            "slash_commands": case.scenario.available_capabilities.slash_commands,
-            "cli_commands": case.scenario.available_capabilities.cli_commands,
-            "synthetic_suites": case.scenario.available_capabilities.synthetic_suites,
-        },
+        available_capabilities=session_capabilities(case.scenario.available_capabilities),
         resolved_integrations_override=case.scenario.session.resolved_integrations,
     )
     executed: list[dict[str, Any]] = []
@@ -223,11 +267,15 @@ def run_oracle_once(case: ScenarioCase, monkeypatch: pytest.MonkeyPatch) -> Orac
     import app.agent.tool_loop as _tool_loop_mod
 
     gathered_tool_calls: list[str] = []
+    gathered_valid_data: set[str] = set()
     _original_tool_loop = _tool_loop_mod.run_tool_calling_loop
 
     def _recording_tool_loop(*args: Any, **kwargs: Any) -> Any:
         result = _original_tool_loop(*args, **kwargs)
-        gathered_tool_calls.extend(tc.name for tc, _ in result.executed)
+        for tc, output in result.executed:
+            gathered_tool_calls.append(tc.name)
+            if tool_output_returned_valid_data(output):
+                gathered_valid_data.add(tc.name)
         return result
 
     monkeypatch.setattr(_tool_loop_mod, "run_tool_calling_loop", _recording_tool_loop)
@@ -274,7 +322,7 @@ def run_oracle_once(case: ScenarioCase, monkeypatch: pytest.MonkeyPatch) -> Orac
     ]
 
     gathered_contract_failures = _gathered_contract_failures(
-        answer.gathered_tools_contract, gathered_tool_calls
+        answer.gathered_tools_contract, gathered_tool_calls, gathered_valid_data
     )
 
     passed = True
@@ -321,6 +369,7 @@ def run_oracle_once(case: ScenarioCase, monkeypatch: pytest.MonkeyPatch) -> Orac
             "forbidden_tokens_matched": forbidden_tokens,
             "forbidden_executed_kinds": forbidden_executed,
             "gathered_tool_calls": gathered_tool_calls,
+            "gathered_valid_data": sorted(gathered_valid_data),
             "gathered_contract_failures": gathered_contract_failures,
             "last_assistant_intent": session.last_assistant_intent,
         },

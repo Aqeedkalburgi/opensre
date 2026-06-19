@@ -1,13 +1,10 @@
 id: 309-freeform-database-slow
 title: Freeform database slow question
 intent_class: investigation
-risk_level: medium
 input:
   prompt: why is the database slow?
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations:
   - datadog
   # Pin a fixture-owned Datadog config so the planner sees >=1 connected
@@ -22,10 +19,6 @@ session:
       app_key: fixture-app-key
       site: datadoghq.com
       base_url: https://api.datadoghq.com
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes: []
 route:
   expected_kind: handle_message_with_agent
@@ -56,5 +49,4 @@ history:
     ok: true
   - type: alert
     ok: true
-tier: full
 runs: 3

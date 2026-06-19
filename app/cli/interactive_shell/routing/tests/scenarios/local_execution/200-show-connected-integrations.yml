@@ -1,13 +1,10 @@
 id: 200-show-connected-integrations
 title: Show connected integrations
 intent_class: local_execution
-risk_level: medium
 input:
   prompt: show me connected integrations
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations:
   - datadog
   - sentry
@@ -49,5 +46,4 @@ history:
     ok: true
   - type: slash
     ok: true
-tier: critical
 runs: 1

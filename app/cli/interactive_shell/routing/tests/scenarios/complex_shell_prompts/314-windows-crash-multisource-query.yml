@@ -1,15 +1,12 @@
 id: 314-windows-crash-multisource-query
 title: Windows crash epic dispatches an investigation across Sentry, GitHub, and PostHog
 intent_class: complex_shell_prompts
-risk_level: medium
 input:
   prompt: >-
     Hey OpenSRE figure out why our OpenSRE agent is crashing on Windows machines
     by querying (a) sentry, (b) github issues, (c) posthog
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations:
   - sentry
   - github
@@ -37,10 +34,6 @@ session:
       mode: streamable-http
       url: https://mcp.posthog.com/mcp
       auth_token: fixture-token
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes:
 - "Multi-source investigation request with Sentry, GitHub, and PostHog connected.\
   \ Because at least one integration is connected, the planner DISPATCHES an\
@@ -77,5 +70,4 @@ history:
     ok: true
   - type: alert
     ok: true
-tier: full
 runs: 5

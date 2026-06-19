@@ -1,14 +1,11 @@
 id: 315-posthog-events-person-lookup-handoff
 title: PostHog person-events lookup hands off and grounds the answer via PostHog (not an investigation)
 intent_class: complex_shell_prompts
-risk_level: low
 input:
   prompt: >-
     events for the person whose github_username is davincios in posthog mcp
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations:
   - posthog_mcp
   # PostHog is the ONLY connected source, so the gather loop has exactly one real
@@ -25,10 +22,6 @@ session:
       mode: streamable-http
       url: https://mcp.posthog.com/mcp
       auth_token: fixture-token
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes:
 - "Data-retrieval / analytics lookup, NOT an investigation. The prompt asks to\
   \ fetch events for a named person in PostHog -- it names no failure, crash,\
@@ -87,5 +80,4 @@ history:
   expected:
   - type: cli_agent
     ok: true
-tier: full
 runs: 3

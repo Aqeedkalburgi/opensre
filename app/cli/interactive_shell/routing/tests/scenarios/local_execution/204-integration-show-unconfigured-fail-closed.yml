@@ -1,19 +1,12 @@
 id: 204-integration-show-unconfigured-fail-closed
 title: Show unconfigured Datadog integration fails closed
 intent_class: local_execution
-risk_level: medium
 input:
   prompt: show datadog integration details
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations: []
   resolved_integrations: {}
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes: []
 route:
   expected_kind: handle_message_with_agent
@@ -38,5 +31,4 @@ history:
   expected:
   - type: cli_agent
     ok: true
-tier: full
 runs: 3

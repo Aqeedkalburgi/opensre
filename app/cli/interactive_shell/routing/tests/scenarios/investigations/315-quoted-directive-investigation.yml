@@ -1,13 +1,10 @@
 id: 315-quoted-directive-investigation
 title: Quoted directive routes to investigation, not a chatty handoff
 intent_class: investigation
-risk_level: medium
 input:
   prompt: investigate "checkout is returning 502s for EU customers"
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations:
   - sentry
   # Pin a fixture-owned Sentry config so the planner sees >=1 connected
@@ -22,10 +19,6 @@ session:
       project_slug: fixture-project
       auth_token: fixture-token
       base_url: https://sentry.io
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes:
 - "Regression for quoted directives. An explicit action verb (investigate) whose\
   \ object is quotation-marked text must treat the quoted text as the investigation\
@@ -63,5 +56,4 @@ history:
     ok: true
   - type: alert
     ok: true
-tier: full
 runs: 3

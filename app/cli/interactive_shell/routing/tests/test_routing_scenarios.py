@@ -26,6 +26,7 @@ from app.cli.interactive_shell.routing.tests._oracle_runtime import (
     OracleRunResult,
     fresh_session,
     run_oracle_once,
+    session_capabilities,
 )
 from app.cli.interactive_shell.routing.tests.scenario_loader import (
     ScenarioCase,
@@ -214,11 +215,9 @@ def test_live_action_planning(live_planning_case: ScenarioCase) -> None:
     session = fresh_session(
         with_prior_state=live_planning_case.scenario.session.has_prior_state,
         configured_integrations=live_planning_case.scenario.session.configured_integrations,
-        available_capabilities={
-            "slash_commands": live_planning_case.scenario.available_capabilities.slash_commands,
-            "cli_commands": live_planning_case.scenario.available_capabilities.cli_commands,
-            "synthetic_suites": live_planning_case.scenario.available_capabilities.synthetic_suites,
-        },
+        available_capabilities=session_capabilities(
+            live_planning_case.scenario.available_capabilities
+        ),
     )
     prompt = live_planning_case.scenario.input.prompt
     answer = live_planning_case.answer

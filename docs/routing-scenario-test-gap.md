@@ -4,6 +4,14 @@
 **Concerns:** `complex_shell_prompts` scenario class; oracle coverage of conversational tool-gathering  
 **Status:** Active gap — CI gives false green on integration behaviour
 
+> **Update (2026-06-19):** The scenario schema has since been trimmed and the
+> oracle's capability defaults realigned with production. `available_capabilities`
+> is now a three-state knob (omit = enabled/production default, `[]` = disabled,
+> non-empty = allowlist) instead of disabling slash/cli/synthetic by default, and
+> the dead `risk_level`/`tier`/`remote_connected`/`surface` fields were removed.
+> See the "Scenario schema and `available_capabilities` semantics" section of
+> `app/cli/interactive_shell/routing/AGENTS.md` for the canonical contract.
+
 ---
 
 ## Summary

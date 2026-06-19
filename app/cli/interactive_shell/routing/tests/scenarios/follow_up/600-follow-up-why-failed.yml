@@ -1,21 +1,14 @@
 id: 600-follow-up-why-failed
 title: Follow-up why failed
 intent_class: follow_up
-risk_level: medium
 input:
   prompt: why did it fail?
-  surface: interactive_cli
 session:
   has_prior_state: true
-  remote_connected: false
   configured_integrations: []
   # Pin an empty resolved store so the follow-up is answered from prior context
   # only -- the gather loop has no tools regardless of local ~/.opensre integrations.
   resolved_integrations: {}
-available_capabilities:
-  slash_commands: []
-  cli_commands: []
-  synthetic_suites: []
 notes: []
 
 route:
@@ -45,5 +38,4 @@ history:
   expected:
   - type: cli_agent
     ok: true
-tier: full
 runs: 3

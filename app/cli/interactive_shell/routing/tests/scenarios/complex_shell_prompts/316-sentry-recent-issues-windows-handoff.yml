@@ -1,0 +1,89 @@
+id: 316-sentry-recent-issues-windows-handoff
+title: Sentry recent-issues lookup hands off and grounds the answer via Sentry (not an investigation)
+intent_class: complex_shell_prompts
+input:
+  prompt: >-
+    can you query sentry if there are recent issues on windows?
+session:
+  has_prior_state: false
+  configured_integrations:
+  - sentry
+  # Sentry is the ONLY connected source, so the gather loop has exactly one real
+  # integration to call. This is the Sentry counterpart to 315 (PostHog): even
+  # WITH an observability source connected, a plain data-retrieval query ("are
+  # there recent issues on windows?") is NOT an incident root-cause, so the
+  # planner must HAND OFF (no investigation_start) and let the conversational
+  # gather loop query Sentry. The token is fake, so search_sentry_issues reaches
+  # the live endpoint and fails auth; the oracle records the tool as "called"
+  # regardless of the error, which is the deterministic, credential-independent
+  # signal the contract asserts. issue_id is intentionally omitted so the only
+  # available Sentry tool is search_sentry_issues -- get_sentry_issue_details and
+  # list_sentry_issue_events both gate is_available on a known issue_id.
+  resolved_integrations:
+    sentry:
+      connection_verified: true
+      organization_slug: fixture-org
+      project_slug: fixture-project
+      auth_token: fixture-token
+      base_url: https://sentry.io
+notes:
+- "Data-retrieval / analytics lookup, NOT an investigation. The prompt asks to\
+  \ search Sentry for recent issues on Windows -- it names no failure, crash,\
+  \ error, outage, or incident to root-cause (it asks IF there ARE issues, not\
+  \ WHY something is failing). The planner must NOT emit investigation_start\
+  \ (regression guard for the DATA-RETRIEVAL rule in the action-planner prompt,\
+  \ whose own example is 'list the open sentry issues for checkout'): it hands\
+  \ off and the conversational gather loop queries Sentry to ground the answer.\
+  \ Contrast with 314, where 'crashing on Windows' names a failure and DOES\
+  \ dispatch an investigation."
+- "This reproduces a real interactive-shell turn ('can you query sentry if there\
+  \ are recent issue on windows?') that routed to the gather loop and called\
+  \ search_sentry_issues live. Before this fixture, no scenario locked in the\
+  \ Sentry data-gathering path: 315 covers PostHog, 314 covers multi-source\
+  \ investigation dispatch, 313 covers the no-integration negative control. A\
+  \ broken Sentry is_available/extract_params (e.g. a bad injected_params change),\
+  \ a silently-dropped search_sentry_issues registration, or the planner wrongly\
+  \ starting an investigation would all have passed CI undetected."
+- "Solidity contract: because Sentry is the only resolved integration, the gather\
+  \ loop MUST engage the Sentry tool surface on every run -- search_sentry_issues\
+  \ is asserted via must_call_all (strictly stronger than must_call_any), so a\
+  \ silently-dropped Sentry tool registration, a broken is_available check, or\
+  \ the planner wrongly starting an investigation instead of handing off all fail\
+  \ this scenario instead of passing on hallucinated text. search_sentry_issues\
+  \ is the only chat-surface Sentry tool available without a pre-known issue_id,\
+  \ so it is the deterministic, auth-independent proof that the gather loop routed\
+  \ this lookup to Sentry; it 401s on the fake fixture token but still counts as\
+  \ called."
+route:
+  expected_kind: handle_message_with_agent
+  expected_command_text: null
+policy:
+  executes_terminal_action: false
+planned_actions: []
+executed_actions: []
+response_contract:
+  must_contain_any:
+  - sentry
+  - issue
+  - windows
+  must_not_contain:
+  - $ /
+  forbidden_actions:
+  - investigation
+  - shell
+gathered_tools_contract:
+  # A Sentry data lookup with ONLY Sentry connected must drive the gather loop to
+  # engage the Sentry tool surface -- search_sentry_issues is the entry tool the
+  # loop hits when Sentry is the resolved integration and no issue_id is known.
+  # must_call_all (not must_call_any) makes this the strong, grounded signal: it
+  # fails if the assistant answers from training data without querying Sentry, if
+  # the tool is deregistered, or if the planner wrongly dispatches an
+  # investigation. The investigation action is guarded separately via
+  # response_contract.forbidden_actions.
+  must_call_all:
+  - search_sentry_issues
+history:
+  expected:
+  - type: cli_agent
+    ok: true
+runs: 3

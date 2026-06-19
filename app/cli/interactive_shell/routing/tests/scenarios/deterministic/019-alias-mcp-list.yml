@@ -1,20 +1,12 @@
 id: 019-alias-mcp-list
 title: MCP list alias
 intent_class: deterministic
-risk_level: low
 input:
   prompt: mcp list
-  surface: interactive_cli
 session:
   has_prior_state: false
-  remote_connected: false
   configured_integrations: []
   resolved_integrations: {}
-available_capabilities:
-  slash_commands:
-  - /mcp
-  cli_commands: []
-  synthetic_suites: []
 notes: []
 
 route:
@@ -44,5 +36,4 @@ history:
   expected:
   - type: slash
     ok: true
-tier: critical
 runs: 1

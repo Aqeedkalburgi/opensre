@@ -59,6 +59,32 @@ If all answers are weak, keep the logic inline.
 | `app/cli/interactive_shell/routing/tests/scenarios/**/scenario.yml` | Routing package owners | Input world: prompt, session, capabilities, intent metadata |
 | `app/cli/interactive_shell/routing/tests/scenarios/**/answer.yml` | Routing package owners | Expected behavior: route, policy, planned/executed actions, response contract |
 
+## Scenario schema and `available_capabilities` semantics
+
+Scenario fixtures are intentionally minimal: the loader (`scenario_loader.py`)
+parses only fields the runner asserts on. Do **not** re-add decorative metadata.
+
+- **Removed fields (do not re-add):** `risk_level`, `tier`,
+  `session.remote_connected`, and `input.surface` were parsed-but-unused and have
+  been dropped from the schema and every fixture. `title` and `notes` remain as
+  human-only documentation.
+- **`available_capabilities` is a three-state, production-faithful knob.** It
+  constrains which planner tools the live oracle offers. Its default mirrors
+  production: `ReplSession()` carries no capability constraints, so every tool is
+  enabled. For each surface (`slash_commands`, `cli_commands`, `synthetic_suites`):
+  - **omit the key (or omit the whole block)** → the tool stays enabled (the
+    production default). This is the right choice for almost every scenario.
+  - **explicit empty list `[]`** → the tool is explicitly disabled (hidden from
+    the planner specs and blocked at dispatch). Use only when a scenario genuinely
+    needs that surface off to test a specific path.
+  - **non-empty list** → an allowlist: the tool is enabled and the action
+    normalizer drops proposed actions outside the list.
+- **Do not re-introduce all-empty `available_capabilities` blocks.** A block that
+  disables all three surfaces is the old redundant boilerplate that predated the
+  production-faithful default; it is rejected by
+  `test_available_capabilities_blocks_are_not_redundant_boilerplate`. Omit the
+  block instead.
+
 ## Routing test isolation policy (no mocks)
 
 - Do **not** use `unittest.mock`, `patch`, `MagicMock`, or equivalent mocking

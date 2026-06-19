@@ -33,8 +33,6 @@ INTENT_CLASSES = frozenset(
         "non_actionable",
     }
 )
-RISK_LEVELS = frozenset({"low", "medium", "high"})
-TIERS = frozenset({"critical", "full"})
 VALID_ACTION_KINDS = frozenset(
     {
         "llm_provider",
@@ -68,22 +66,34 @@ INTENT_TO_BEHAVIOR_CLASS: dict[str, str] = {
 @dataclass(frozen=True)
 class ScenarioInput:
     prompt: str
-    surface: str
 
 
 @dataclass(frozen=True)
 class ScenarioSession:
     has_prior_state: bool
-    remote_connected: bool
     configured_integrations: tuple[str, ...]
     resolved_integrations: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
 class ScenarioCapabilities:
-    slash_commands: tuple[str, ...]
-    cli_commands: tuple[str, ...]
-    synthetic_suites: tuple[str, ...]
+    """Per-scenario planner capability constraints (three-state).
+
+    Each field carries one of three states that map directly onto the runtime
+    capability gate (``capability_not_explicitly_disabled``):
+
+    * ``None`` — the capability key is absent; the tool stays available, which
+      matches the production default (``ReplSession()`` has no capability
+      constraints).
+    * ``()`` — an explicit empty list; the tool is explicitly disabled (hidden
+      from the planner specs and blocked at dispatch).
+    * a non-empty tuple — an allowlist; the tool is available and the action
+      normalizer drops proposed actions outside the list.
+    """
+
+    slash_commands: tuple[str, ...] | None
+    cli_commands: tuple[str, ...] | None
+    synthetic_suites: tuple[str, ...] | None
 
 
 @dataclass(frozen=True)
@@ -91,7 +101,6 @@ class Scenario:
     id: str
     title: str
     intent_class: str
-    risk_level: str
     input: ScenarioInput
     session: ScenarioSession
     available_capabilities: ScenarioCapabilities
@@ -139,14 +148,23 @@ class GatheredToolsContract:
     * ``must_call_any`` — at least one of these tool names must be invoked.
     * ``must_call_all`` — every one of these tool names must be invoked.
     * ``must_not_call`` — none of these tool names may be invoked.
+    * ``must_return_valid_data`` — every one of these tool names must be invoked
+      AND return a successful result (a real integration response, not an error
+      or an ``available: false`` placeholder). This is strictly stronger than
+      ``must_call_all``: it fails on a credential 401, a malformed-param 400, or
+      any other errored call, so it can only pass when the tool actually reached
+      the live integration and got valid data back.
 
-    A tool counts as "called" when it appears in ``ToolLoopResult.executed``,
-    regardless of whether the call succeeded or returned an error.
+    For ``must_call_any``, ``must_call_all``, and ``must_not_call`` a tool counts
+    as "called" when it appears in ``ToolLoopResult.executed`` regardless of
+    whether the call succeeded. ``must_return_valid_data`` additionally inspects
+    the tool's output and only counts a call that returned valid data.
     """
 
     must_call_any: tuple[str, ...]
     must_call_all: tuple[str, ...]
     must_not_call: tuple[str, ...]
+    must_return_valid_data: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -177,7 +195,6 @@ class Answer:
     executed_actions: tuple[dict[str, Any], ...]
     response_contract: dict[str, list[str]]
     history_expected: tuple[dict[str, Any], ...]
-    tier: str
     runs: int
     gathered_tools_contract: GatheredToolsContract | None = None
 
@@ -214,10 +231,10 @@ def _parse_gathered_tools_contract(raw: object, *, label: str) -> GatheredToolsC
     """Parse the optional ``gathered_tools_contract`` block.
 
     Returns ``None`` when absent. Each of ``must_call_any``, ``must_call_all``,
-    and ``must_not_call`` is an optional list of non-empty tool-name strings.
-    Registry membership of those names is enforced separately by
-    ``test_routing_fixture_integrity`` so the loader stays free of a heavy tool
-    registry import.
+    ``must_not_call``, and ``must_return_valid_data`` is an optional list of
+    non-empty tool-name strings. Registry membership of those names is enforced
+    separately by ``test_routing_fixture_integrity`` so the loader stays free of
+    a heavy tool registry import.
     """
     if raw is None:
         return None
@@ -226,9 +243,20 @@ def _parse_gathered_tools_contract(raw: object, *, label: str) -> GatheredToolsC
         must_call_any=_string_list(mapping.get("must_call_any"), label=f"{label}.must_call_any"),
         must_call_all=_string_list(mapping.get("must_call_all"), label=f"{label}.must_call_all"),
         must_not_call=_string_list(mapping.get("must_not_call"), label=f"{label}.must_not_call"),
+        must_return_valid_data=_string_list(
+            mapping.get("must_return_valid_data"), label=f"{label}.must_return_valid_data"
+        ),
     )
-    if not (contract.must_call_any or contract.must_call_all or contract.must_not_call):
-        msg = f"{label} must define at least one of must_call_any/must_call_all/must_not_call."
+    if not (
+        contract.must_call_any
+        or contract.must_call_all
+        or contract.must_not_call
+        or contract.must_return_valid_data
+    ):
+        msg = (
+            f"{label} must define at least one of "
+            "must_call_any/must_call_all/must_not_call/must_return_valid_data."
+        )
         raise ValueError(msg)
     return contract
 
@@ -246,6 +274,19 @@ def _string_list(raw: object, *, label: str) -> tuple[str, ...]:
             raise ValueError(msg)
         values.append(item.strip())
     return tuple(values)
+
+
+def _optional_string_list(raw: object, *, label: str) -> tuple[str, ...] | None:
+    """Parse a capability allowlist while preserving the absent-vs-empty split.
+
+    Returns ``None`` when the key is absent or explicitly null (no constraint;
+    the tool stays available, matching the production default), ``()`` for an
+    explicit empty list (the capability is explicitly disabled), and a tuple of
+    non-empty strings for an allowlist.
+    """
+    if raw is None:
+        return None
+    return _string_list(raw, label=label)
 
 
 def _action_list(raw: object, *, label: str) -> tuple[dict[str, Any], ...]:
@@ -392,17 +433,11 @@ def _parse_scenario_yaml(
         )
         raise ValueError(msg)
 
-    risk_level = str(data.get("risk_level", "")).strip()
-    if risk_level not in RISK_LEVELS:
-        msg = f"{scenario_path}: invalid risk_level {risk_level!r}."
-        raise ValueError(msg)
-
     input_raw = _require_mapping(data.get("input"), label=f"{scenario_path} input")
     prompt = str(input_raw.get("prompt", "")).strip()
     if not prompt:
         msg = f"{scenario_path}: input.prompt must be non-empty."
         raise ValueError(msg)
-    surface = str(input_raw.get("surface", "interactive_cli")).strip() or "interactive_cli"
 
     session_raw = _require_mapping(data.get("session"), label=f"{scenario_path} session")
     capabilities_raw = _require_mapping(
@@ -414,11 +449,9 @@ def _parse_scenario_yaml(
         id=scenario_id,
         title=title,
         intent_class=intent_class,
-        risk_level=risk_level,
-        input=ScenarioInput(prompt=prompt, surface=surface),
+        input=ScenarioInput(prompt=prompt),
         session=ScenarioSession(
             has_prior_state=bool(session_raw.get("has_prior_state", False)),
-            remote_connected=bool(session_raw.get("remote_connected", False)),
             configured_integrations=_string_list(
                 session_raw.get("configured_integrations"),
                 label=f"{scenario_path} session.configured_integrations",
@@ -429,15 +462,15 @@ def _parse_scenario_yaml(
             ),
         ),
         available_capabilities=ScenarioCapabilities(
-            slash_commands=_string_list(
+            slash_commands=_optional_string_list(
                 capabilities_raw.get("slash_commands"),
                 label=f"{scenario_path} slash_commands",
             ),
-            cli_commands=_string_list(
+            cli_commands=_optional_string_list(
                 capabilities_raw.get("cli_commands"),
                 label=f"{scenario_path} cli_commands",
             ),
-            synthetic_suites=_string_list(
+            synthetic_suites=_optional_string_list(
                 capabilities_raw.get("synthetic_suites"),
                 label=f"{scenario_path} synthetic_suites",
             ),
@@ -538,11 +571,6 @@ def _parse_answer_yaml(answer_path: Path, *, scenario_id: str) -> Answer:
         msg = f"{answer_path}: executes_terminal_action=false requires executed_actions=[]."
         raise ValueError(msg)
 
-    tier = str(data.get("tier", "critical")).strip() or "critical"
-    if tier not in TIERS:
-        msg = f"{answer_path}: invalid tier {tier!r}."
-        raise ValueError(msg)
-
     runs_raw = data.get("runs", 1)
     runs = int(runs_raw) if isinstance(runs_raw, int | str) else 1
     if runs < 1:
@@ -583,7 +611,6 @@ def _parse_answer_yaml(answer_path: Path, *, scenario_id: str) -> Answer:
             "forbidden_actions": forbidden_actions,
         },
         history_expected=history_expected,
-        tier=tier,
         runs=runs,
         gathered_tools_contract=gathered_tools_contract,
     )
