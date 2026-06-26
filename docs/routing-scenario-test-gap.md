@@ -18,7 +18,7 @@
 > non-empty = allowlist) instead of disabling slash/cli/synthetic by default, and
 > the dead `risk_level`/`tier`/`remote_connected`/`surface` fields were removed.
 > See the "Scenario schema and `available_capabilities` semantics" section of
-> `cli/interactive_shell/harness/AGENTS.md` for the canonical contract.
+> `interactive_shell/harness/AGENTS.md` for the canonical contract.
 
 ---
 
@@ -59,7 +59,7 @@ copy and the REPL status bar. It does not control which integrations are
 entirely:
 
 ```python
-# cli/interactive_shell/chat/tool_gathering.py
+# interactive_shell/chat/tool_gathering.py
 def _resolve_session_integrations(session: ReplSession) -> dict[str, Any]:
     if session.resolved_integrations_cache is not None:
         return session.resolved_integrations_cache
@@ -179,7 +179,7 @@ The docstring in `scenario_loader.py` acknowledges the gap explicitly:
 # execution-layer tests, not these routing fixtures."
 ```
 
-That execution-layer test does not exist. `tests/cli/interactive_shell/runtime/
+That execution-layer test does not exist. `tests/interactive_shell/runtime/
 test_answer_with_tools.py` patches both `gather_tool_evidence` and
 `answer_cli_agent` entirely, so it tests the wiring between them (gather output
 flows to answer), not whether the gather loop calls the right tools with the

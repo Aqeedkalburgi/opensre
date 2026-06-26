@@ -5,7 +5,7 @@ Lives in ``services/tracer_client/`` so the Tracer-specific
 dependency stays inside the Tracer integration package. Core code
 under ``core/orchestration/`` calls
 :func:`integrations.port.fetch_remote_integrations`; the boundary
-(``cli.interactive_shell.ui.output.boundary``) registers this
+(``interactive_shell.ui.output.boundary``) registers this
 adapter at startup so the call routes through ``TracerClient``.
 """
 
