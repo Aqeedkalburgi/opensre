@@ -224,10 +224,17 @@ def test_repl_main_identifies_saved_github_username(monkeypatch: Any) -> None:
         "persistent",
         staticmethod(_persistent_task_registry),
     )
+
+    class _PromptSession:
+        history = None
+
+    def _build_prompt_session() -> _PromptSession:
+        return _PromptSession()
+
     monkeypatch.setattr(
         entrypoint._prompt_surface,
         "_build_prompt_session",
-        lambda: type("P", (), {"history": None})(),
+        _build_prompt_session,
     )
 
     import asyncio
