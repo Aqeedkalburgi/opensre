@@ -11,7 +11,7 @@ from rich.console import Console
 
 from core.agent_harness.session import ReplSession
 from core.domain.alerts import inbox as _alert_inbox
-from interactive_shell.agent_shell.agent import (
+from interactive_shell.runtime.turn_host import (
     AgentTurnRunner,
     run_agent_turn_queue,
     run_input_loop,
