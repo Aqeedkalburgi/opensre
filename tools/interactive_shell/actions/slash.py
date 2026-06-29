@@ -13,6 +13,7 @@ from interactive_shell.command_registry.slash_catalog import (
 )
 from interactive_shell.ui import BOLD_BRAND, DIM, repl_tty_interactive
 from interactive_shell.ui.execution_confirm import execution_allowed
+from interactive_shell.utils.telemetry.turn_outcome import format_terminal_turn_outcome
 from tools.interactive_shell.contracts import (
     ToolContext,
     capability_available_from_sources,
@@ -103,8 +104,11 @@ def execute_slash_tool(args: dict[str, Any], ctx: ToolContext) -> bool:
         # Hand the picker back to the REPL loop instead of running it against the
         # live prompt: queue_auto_command re-submits it as a deterministic turn
         # the loop dispatches with exclusive stdin, so no CPR replies leak in.
+        # Do not record a slash history row here — dispatch_slash will record when
+        # the queued command runs. Attach a turn hint for this turn's analytics.
         ctx.console.print(f"[{DIM}]Launching[/] [{BOLD_BRAND}]{escape(stripped)}[/]…")
         ctx.session.queue_auto_command(stripped)
+        ctx.session.set_turn_outcome_hint(f"queued {stripped} for exclusive stdin dispatch")
         return True
 
     plan = plan_foreground_tool("slash", "slash")
@@ -117,7 +121,12 @@ def execute_slash_tool(args: dict[str, Any], ctx: ToolContext) -> bool:
         is_tty=ctx.is_tty,
         action_already_listed=ctx.action_already_listed,
     ):
-        ctx.session.record("slash", stripped, ok=False)
+        ctx.session.record(
+            "slash",
+            stripped,
+            ok=False,
+            response_text=format_terminal_turn_outcome(stripped, kind="slash", ok=False),
+        )
         return True
 
     ctx.console.print(f"[bold]$ {escape(stripped)}[/bold]")
