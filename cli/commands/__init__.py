@@ -27,6 +27,7 @@ from cli.commands.onboard import onboard
 from cli.commands.remote import remote
 from cli.commands.tests import tests
 from cli.commands.watchdog import watchdog_command
+from cli.commands.telegram import telegram_command
 
 _COMMANDS: tuple[click.Command, ...] = (
     investigate_command,
@@ -50,6 +51,7 @@ _COMMANDS: tuple[click.Command, ...] = (
     update_command,
     uninstall_command,
     version_command,
+    telegram_command,
 )
 
 

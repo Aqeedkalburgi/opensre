@@ -71,6 +71,7 @@ def run_investigation(
     opensre_evaluate: bool = False,
     investigation_metadata: tuple[str, str, str] | None = None,
     agent_class: type[ConnectedInvestigationAgent] | None = None,
+    telegram_context: dict[str, Any] | None = None,
 ) -> AgentState:
     """Run the investigation from a raw alert payload. Pure function: inputs in, state out.
 
@@ -85,6 +86,7 @@ def run_investigation(
             to ``ConnectedInvestigationAgent``. Callers that need a custom
             termination policy, structured-stage progression, or other
             agent-level extensions can pass a subclass instead.
+        telegram_context: Optional Telegram thread/context metadata.
     """
     init_sentry(entrypoint="pipeline")
     from tools.investigation.lifecycle import run_connected_investigation as _run
@@ -98,6 +100,8 @@ def run_investigation(
         cast(dict[str, Any], initial)["resolved_integrations"] = resolved_integrations
     if openclaw_context:
         cast(dict[str, Any], initial)["openclaw_context"] = dict(openclaw_context)
+    if telegram_context:
+        cast(dict[str, Any], initial)["telegram_context"] = telegram_context
 
     with report_and_reraise(
         logger=logger,
@@ -189,6 +193,7 @@ def run_investigation_payload(
     raw_alert: str | dict[str, Any],
     opensre_evaluate: bool = False,
     investigation_metadata: tuple[str, str, str] | None = None,
+    telegram_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run an investigation and return the serializable result payload.
 
@@ -204,6 +209,7 @@ def run_investigation_payload(
         raw_alert,
         opensre_evaluate=opensre_evaluate,
         investigation_metadata=investigation_metadata,
+        telegram_context=telegram_context,
     )
     return build_investigation_payload(state, opensre_evaluate=opensre_evaluate)
 
