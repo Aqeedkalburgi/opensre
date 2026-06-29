@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import os
-import json
 import time
-import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -333,7 +331,7 @@ def test_polling_duplicate_update_id_ignored(mock_handle: MagicMock, mock_token:
         runner = CliRunner()
         # Run poll command (timeout set to small value)
         runner.invoke(telegram_poll_command, ["--timeout", "1"])
-        
+
         # We expect handle_telegram_message to be called only for update_id 100 (first) and 101
         assert mock_handle.call_count == 2
         calls = mock_handle.mock_calls
@@ -355,7 +353,7 @@ def test_handler_investigate_background_tasks_and_generic_error(mock_post: Magic
             ).model_dump(mode="json"),
         }
     }
-    
+
     msg = parse_telegram_update({
         "update_id": 1,
         "message": {
@@ -365,20 +363,20 @@ def test_handler_investigate_background_tasks_and_generic_error(mock_post: Magic
             "text": "/investigate CPU usage is high",
         }
     })
-    
+
     with patch("tools.investigation.capability.run_investigation_payload", side_effect=ValueError("secret internal info")):
         import asyncio
         from integrations.telegram.handler import _background_tasks
-        
+
         async def run_test():
             await handle_telegram_message(msg)
             for t in list(_background_tasks):
                 try:
                     await t
-                except Exception:
+                except ValueError:
                     pass
         asyncio.run(run_test())
-        
+
         # Verify the generic error message was posted to Telegram (no exception leakage)
         assert not any("secret internal info" in (call.kwargs.get("text") or "") for call in mock_post.mock_calls)
         mock_post.assert_any_call(
@@ -402,7 +400,7 @@ def test_status_command_custom_status(mock_lookup: MagicMock, mock_post: MagicMo
             ).model_dump(mode="json"),
         }
     }
-    
+
     # Mock investigation lookup to return an active/custom status record
     mock_lookup.return_value = (
         {
@@ -413,7 +411,7 @@ def test_status_command_custom_status(mock_lookup: MagicMock, mock_post: MagicMo
         },
         1,
     )
-    
+
     msg = parse_telegram_update({
         "update_id": 1,
         "message": {
@@ -423,10 +421,10 @@ def test_status_command_custom_status(mock_lookup: MagicMock, mock_post: MagicMo
             "text": "/status abc123",
         }
     })
-    
+
     import asyncio
     asyncio.run(handle_telegram_message(msg))
-    
+
     # Verify the status text includes the real lifecycle status
     expected_status_text = (
         "Investigation Status: In Progress\n"

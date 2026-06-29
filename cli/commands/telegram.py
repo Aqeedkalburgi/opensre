@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import click
 import httpx
-import time
 import logging
 
 from integrations.telegram.handler import get_telegram_token, handle_telegram_message

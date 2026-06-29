@@ -220,7 +220,7 @@ async def handle_telegram_message(message: NormalizedMessage) -> None:
             parsed = json.loads(args)
             if isinstance(parsed, dict):
                 alert_payload = parsed
-        except Exception:
+        except json.JSONDecodeError:
             pass
 
         # Send acknowledgement
