@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import hashlib
+import os
 from typing import Any
 import asyncio
 
@@ -61,7 +62,6 @@ def _message_hash(text: str) -> str:
 
 def get_telegram_token() -> str:
     """Load Telegram bot token."""
-    import os
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         record = get_integration(MessagingPlatform.TELEGRAM.value)
