@@ -189,7 +189,7 @@ async def handle_telegram_message(message: NormalizedMessage) -> None:
             alert_name = inv.get("alert_name") or "Unknown Alert"
             category = inv.get("root_cause_category") or "None"
             root_cause = inv.get("root_cause") or "None"
-            status = inv.get("status") or "Completed"
+            status = inv.get("status") or "Unknown"
             status_text = (
                 f"Investigation Status: {status}\n"
                 f"Alert: {alert_name}\n"
