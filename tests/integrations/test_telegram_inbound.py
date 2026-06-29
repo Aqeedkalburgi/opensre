@@ -341,3 +341,103 @@ def test_polling_duplicate_update_id_ignored(mock_handle: MagicMock, mock_token:
         assert calls[0][1][0].text == "first"
         assert calls[1][1][0].update_id == 101
         assert calls[1][1][0].text == "third"
+
+
+@patch("integrations.telegram.handler.get_integration")
+@patch("integrations.telegram.handler.post_telegram_message")
+def test_handler_investigate_background_tasks_and_generic_error(mock_post: MagicMock, mock_get: MagicMock) -> None:
+    mock_get.return_value = {
+        "credentials": {
+            "bot_token": "fake-token",
+            "identity_policy": MessagingIdentityPolicy(
+                inbound_enabled=True,
+                allowed_user_ids=["123"],
+            ).model_dump(mode="json"),
+        }
+    }
+    
+    msg = parse_telegram_update({
+        "update_id": 1,
+        "message": {
+            "message_id": "10",
+            "from": {"id": 123},
+            "chat": {"id": 123},
+            "text": "/investigate CPU usage is high",
+        }
+    })
+    
+    with patch("tools.investigation.capability.run_investigation_payload", side_effect=ValueError("secret internal info")):
+        import asyncio
+        from integrations.telegram.handler import _background_tasks
+        
+        async def run_test():
+            await handle_telegram_message(msg)
+            for t in list(_background_tasks):
+                try:
+                    await t
+                except Exception:
+                    pass
+        asyncio.run(run_test())
+        
+        # Verify the generic error message was posted to Telegram (no exception leakage)
+        assert not any("secret internal info" in (call.kwargs.get("text") or "") for call in mock_post.mock_calls)
+        mock_post.assert_any_call(
+            chat_id="123",
+            text="An internal error occurred during the investigation. Please check the logs for details.",
+            bot_token="fake-token",
+            reply_to_message_id="10",
+        )
+
+
+@patch("integrations.telegram.handler.get_integration")
+@patch("integrations.telegram.handler.post_telegram_message")
+@patch("core.agent_harness.session.DEFAULT_SESSION_REPO.lookup_investigation")
+def test_status_command_custom_status(mock_lookup: MagicMock, mock_post: MagicMock, mock_get: MagicMock) -> None:
+    mock_get.return_value = {
+        "credentials": {
+            "bot_token": "fake-token",
+            "identity_policy": MessagingIdentityPolicy(
+                inbound_enabled=True,
+                allowed_user_ids=["123"],
+            ).model_dump(mode="json"),
+        }
+    }
+    
+    # Mock investigation lookup to return an active/custom status record
+    mock_lookup.return_value = (
+        {
+            "alert_name": "High CPU",
+            "root_cause_category": "infrastructure",
+            "root_cause": "noisy neighbor",
+            "status": "In Progress",
+        },
+        1,
+    )
+    
+    msg = parse_telegram_update({
+        "update_id": 1,
+        "message": {
+            "message_id": "12",
+            "from": {"id": 123},
+            "chat": {"id": 123},
+            "text": "/status abc123",
+        }
+    })
+    
+    import asyncio
+    asyncio.run(handle_telegram_message(msg))
+    
+    # Verify the status text includes the real lifecycle status
+    expected_status_text = (
+        "Investigation Status: In Progress\n"
+        "Alert: High CPU\n"
+        "Category: infrastructure\n"
+        "Root Cause: noisy neighbor"
+    )
+    mock_post.assert_any_call(
+        chat_id="123",
+        text=expected_status_text,
+        bot_token="fake-token",
+        reply_to_message_id="12",
+    )
+
