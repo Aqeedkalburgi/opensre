@@ -105,6 +105,7 @@ def test_run_investigation_cli_shapes_agent_state(monkeypatch) -> None:
         "raw_alert": {"alert_name": "PayloadAlert"},
         "opensre_evaluate": False,
         "investigation_metadata": None,
+        "telegram_context": None,
     }
     assert result == {
         "report": "report body",
