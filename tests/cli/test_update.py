@@ -33,7 +33,7 @@ def test_check_only_returns_1_when_update_available(
     monkeypatch.setattr("cli.lifecycle.update._fetch_latest_version", lambda: "1.2.3")
     monkeypatch.setattr(
         "cli.lifecycle.update._upgrade_via_install_script",
-        lambda: pytest.fail(),
+        pytest.fail,
     )
 
     rc = run_update(check_only=True)

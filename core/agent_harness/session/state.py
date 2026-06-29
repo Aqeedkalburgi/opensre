@@ -151,6 +151,9 @@ class ReplSession:
     available_capabilities: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Optional planning-time capability constraints (slash/cli/synthetic)."""
 
+    _turn_outcome_hint: str | None = field(default=None, repr=False, compare=False)
+    """Optional structured outcome set by a terminal handler for analytics."""
+
     accumulated_context: dict[str, Any] = field(default_factory=dict)
     """Reusable infra context — service names, clusters, regions — learned from
     earlier investigations that should seed future ones."""
@@ -280,6 +283,18 @@ class ReplSession:
     ``/integrations setup sentry``) so it flows through the normal
     exclusive-stdin dispatch path — the only place an interactive child process
     gets clean stdin."""
+
+    exclusive_stdin_active: bool = False
+    """True while a turn is running with exclusive stdin reserved (no live prompt).
+
+    Inline picker/wizard slash commands must dispatch immediately during these
+    turns instead of re-queueing via ``queue_auto_command``, which would loop."""
+
+    agent_turn_executed_slashes: set[str] = field(default_factory=set, repr=False)
+    """Slash command lines already executed during the current action-agent turn.
+
+    Prevents the tool-calling loop from re-dispatching the same literal slash
+    command when the model emits a duplicate ``slash_invoke`` on a later iteration."""
 
     prompt_refresh_fn: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to apply pending prefill and redraw the active prompt."""
@@ -439,6 +454,33 @@ class ReplSession:
             if kind is not None and latest.get("type") != kind:
                 continue
             latest["ok"] = ok
+            return
+
+    def set_turn_outcome_hint(self, hint: str | None) -> None:
+        """Attach a structured outcome for the current terminal handler."""
+        self._turn_outcome_hint = hint.strip() if isinstance(hint, str) and hint.strip() else None
+
+    def pop_turn_outcome_hint(self) -> str | None:
+        """Return and clear any structured outcome hint for this turn."""
+        hint = self._turn_outcome_hint
+        self._turn_outcome_hint = None
+        return hint
+
+    def complete_latest_record(
+        self,
+        kind: str,
+        *,
+        response_text: str | None = None,
+        ok: bool | None = None,
+    ) -> None:
+        """Update the newest history row of ``kind`` with analytics outcome text."""
+        for latest in reversed(self.history):
+            if latest.get("type") != kind:
+                continue
+            if ok is not None:
+                latest["ok"] = ok
+            if response_text and response_text.strip():
+                latest["response_text"] = response_text.strip()
             return
 
     def accumulate_from_state(self, state: dict[str, Any] | None) -> None:
@@ -627,6 +669,9 @@ class ReplSession:
         self.correction_intervention_count = 0
         self.pending_prompt_default = None
         self.pending_prompt_autosubmit = False
+        self.exclusive_stdin_active = False
+        if hasattr(self, "agent_turn_executed_slashes"):
+            self.agent_turn_executed_slashes.clear()
         self.last_synthetic_observation_path = None
         self.background_mode_enabled = False
         self.background_investigations.clear()

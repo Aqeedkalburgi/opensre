@@ -44,6 +44,7 @@ from tests.core.agent.scenario_loader import (
 )
 from tools.interactive_shell.action_names import TOOL_KIND_TO_NAME, ToolKind
 from tools.interactive_shell.action_tools import action_tools_for_context
+from tools.interactive_shell.actions.investigation import normalize_investigation_alert_text
 from tools.interactive_shell.contracts import ToolContext
 
 
@@ -168,7 +169,7 @@ def _planning_probe_tool(tool: AgentTool) -> AgentTool:
             )
             content = _slash_content(command, parsed_args)
         elif tool.name == "investigation_start":
-            content = str(args.get("alert_text", "")).strip()
+            content = normalize_investigation_alert_text(str(args.get("alert_text", "")))
         elif tool.name == "synthetic_run":
             suite = str(args.get("suite", "")).strip()
             scenario = str(args.get("scenario", "")).strip()
@@ -200,7 +201,7 @@ def _content_from_tool_call(kind: ToolKind, args: dict[str, object]) -> str:
     if kind == "sample_alert":
         return str(args.get("template", "")).strip()
     if kind == "investigation":
-        return str(args.get("alert_text", "")).strip()
+        return normalize_investigation_alert_text(str(args.get("alert_text", "")))
     if kind == "synthetic_test":
         suite = str(args.get("suite", "")).strip()
         scenario = str(args.get("scenario", "")).strip()

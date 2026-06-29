@@ -127,7 +127,27 @@ def _response_text_from_history_entries(entries: list[dict[str, Any]]) -> str:
         response_text = item.get("response_text")
         if isinstance(response_text, str) and response_text.strip():
             chunks.append(response_text.strip())
+            continue
+        chunks.append(_history_entry_fallback(item))
     return "\n".join(chunks)
+
+
+def _history_entry_fallback(item: dict[str, Any]) -> str:
+    kind = str(item.get("type", "action"))
+    text = str(item.get("text", "")).strip()
+    ok = bool(item.get("ok", True))
+    status = "succeeded" if ok else "failed"
+    if text:
+        return f"{kind} {text} ({status})"
+    return f"{kind} ({status})"
+
+
+def _pop_turn_outcome_hint(session: SessionStore) -> str:
+    pop_hint = getattr(session, "pop_turn_outcome_hint", None)
+    if not callable(pop_hint):
+        return ""
+    hint = pop_hint()
+    return hint.strip() if isinstance(hint, str) else ""
 
 
 def _content_to_text(content: Any) -> str:
@@ -352,6 +372,7 @@ def run_agent_turn(
         for chunk in (
             _response_text_from_history_entries(executed_entries),
             _response_text_from_generic_results(result),
+            _pop_turn_outcome_hint(session),
         )
         if chunk
     ]
